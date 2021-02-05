@@ -160,9 +160,83 @@ namespace Sockets
         private static byte[] ProcessRequest(Request request)
         {
             // TODO
-            var head = new StringBuilder("OK");
-            var body = new byte[0];
-            return CreateResponseBytes(head, body);
+            // var head = new StringBuilder("OK");
+            // var body = new byte[0];
+            // return CreateResponseBytes(head, body);
+            string[] uriParts = request.RequestUri.Split('?');
+            string path = uriParts[0];
+            string queryString = uriParts.Length > 1 ? uriParts[1] : "";
+            NameValueCollection queryParameters = HttpUtility.ParseQueryString(queryString);
+            string cookieString = request.Headers.FirstOrDefault(h => h.Name == "Cookie")?.Value;
+            Dictionary<string, string> cookies = (cookieString ?? "")
+                .Split(";", StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => part.Split("="))
+                .ToDictionary(p => p[0], p => p[1]);
+
+            if (path == "/" || path == "/hello.html")
+            {
+                byte[] bodyBytes = File.ReadAllBytes("hello.html");
+                string body = Encoding.UTF8.GetString(bodyBytes);
+
+                string name = "World";
+                if (queryParameters["name"] != null)
+                    name = queryParameters["name"];
+                else if (cookies.TryGetValue("name", out string nameFromCookie))
+                    name = HttpUtility.UrlDecode(nameFromCookie);
+                body = body.Replace("{{World}}", HttpUtility.HtmlEncode(name));
+
+                string greeting = "Hello";
+                if (queryParameters["greeting"] != null)
+                    greeting = queryParameters["greeting"];
+                body = body.Replace("{{Hello}}", HttpUtility.HtmlEncode(greeting));
+
+                bodyBytes = Encoding.UTF8.GetBytes(body);
+
+                StringBuilder head = new StringBuilder();
+                head.Append("HTTP/1.1 200 OK\r\n");
+                head.Append("Content-Type: text/html; charset=utf-8\r\n");
+                head.Append($"Content-Length: {bodyBytes.Length}\r\n");
+                if (queryParameters["name"] != null)
+                    head.Append($"Set-Cookie: name={HttpUtility.UrlEncode(name)}\r\n");
+                head.Append("\r\n");
+
+                return CreateResponseBytes(head, bodyBytes);
+            }
+            else if (path == "/groot.gif")
+            {
+                byte[] bodyBytes = File.ReadAllBytes("groot.gif");
+
+                StringBuilder head = new StringBuilder();
+                head.Append("HTTP/1.1 200 OK\r\n");
+                head.Append("Content-Type: image/gif\r\n");
+                head.Append($"Content-Length: {bodyBytes.Length}\r\n");
+                head.Append("\r\n");
+
+                return CreateResponseBytes(head, bodyBytes);
+            }
+            else if (path == "/time.html")
+            {
+                byte[] bodyBytes = File.ReadAllBytes("time.template.html");
+                string body = Encoding.UTF8.GetString(bodyBytes);
+                
+                body = body.Replace("{{ServerTime}}", DateTime.Now.ToString());
+                bodyBytes = Encoding.UTF8.GetBytes(body);
+
+                StringBuilder head = new StringBuilder();
+                head.Append("HTTP/1.1 200 OK\r\n");
+                head.Append("Content-Type: text/html; charset=utf-8\r\n");
+                head.Append($"Content-Length: {bodyBytes.Length}\r\n");
+                head.Append("\r\n");
+
+                return CreateResponseBytes(head, bodyBytes);
+            }
+            else
+            {
+                StringBuilder head = new StringBuilder();
+                head.Append("HTTP/1.1 404 Not Found\r\n");
+                head.Append("\r\n");
+                return CreateResponseBytes(head, new byte[0]);
+            }
         }
 
         // Собирает ответ в виде массива байт из байтов строки head и байтов body.
