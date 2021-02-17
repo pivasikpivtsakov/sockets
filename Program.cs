@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Web;
+using Stubble.Core.Builders;
 
 namespace Sockets
 {
@@ -24,6 +25,7 @@ namespace Sockets
     {
         private const int listeningPort = 11000;
         private static ManualResetEvent connectionEstablished = new ManualResetEvent(false);
+        private static string _nameCookie = "";
 
         private class ReceivingState
         {
@@ -159,9 +161,62 @@ namespace Sockets
 
         private static byte[] ProcessRequest(Request request)
         {
-            // TODO
-            var head = new StringBuilder("OK");
-            var body = new byte[0];
+            var head = new StringBuilder();
+            var body = Array.Empty<byte>();
+            if (request.RequestUri == "/" || request.RequestUri.Contains("/hello.html"))
+            {
+                if (request.RequestUri.Contains("?"))
+                {
+                    var queryString = '?' + request.RequestUri.Split('?', 2)[1];
+                    var qryParams = HttpUtility.ParseQueryString(queryString);
+                    var sourceHtml = Encoding.UTF8.GetString(File.ReadAllBytes("hello.html"));
+                    var destHtml = sourceHtml
+                        .Replace("{{Hello}}", HttpUtility.HtmlEncode(qryParams["greeting"]))
+                        .Replace("{{World}}", HttpUtility.HtmlEncode(qryParams["name"]));
+                    _nameCookie = HttpUtility.HtmlEncode(qryParams["name"]);
+                    body = Encoding.UTF8.GetBytes(destHtml);
+                }
+                else
+                {
+                    body = File.ReadAllBytes("hello.html");
+                }
+                var contentLength = body.Length;
+                head.Append("HTTP/1.1 200 OK" +
+                                         "\r\nContent-Type: text/html; charset=utf-8" +
+                                         $"\r\nContent-Length: {contentLength}" +
+                                         $"\r\nSet-Cookie: name={_nameCookie}")
+                                         ;
+            }
+            else if (request.RequestUri == "/groot.gif")
+            {
+                body = File.ReadAllBytes("groot.gif");
+                var contentLength = body.Length;
+                head.Append("HTTP/1.1 200 OK" +
+                          "\r\nContent-Type: image/gif; charset=utf-8" + 
+                          $"\r\nContent-Length: {contentLength}"+
+                          $"\r\nSet-Cookie: name={_nameCookie}");
+            }
+            else if (request.RequestUri == "/time.html")
+            {
+                var stubble = new StubbleBuilder().Build();
+                var now = DateTime.Now;
+                var paramHash = new Dictionary<string, object>
+                {
+                    {"ServerTime", now.ToString(CultureInfo.CurrentCulture)},
+                };
+                using var streamReader = new StreamReader("time.template.html", Encoding.UTF8);
+                body = Encoding.UTF8.GetBytes(stubble.Render(streamReader.ReadToEnd(), paramHash));
+                var contentLength = body.Length;
+                head.Append("HTTP/1.1 200 OK" +
+                            "\r\nContent-Type: text/html; charset=utf-8" +
+                            $"\r\nContent-Length: {contentLength}");
+            }
+            else
+            {
+                head.Append("HTTP/1.1 404 Not Found");
+            }
+
+            head.Append("\r\n\r\n");
             return CreateResponseBytes(head, body);
         }
 
